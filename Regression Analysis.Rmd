@@ -1,0 +1,173 @@
+---
+title: "Project"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# For this regression, I used the Walmart Kaggle data set to understand relation between sales of a walmart store and different location based factors like temperature, fuel price, CPI etc
+##Data Reading and Cleaning
+```{r}
+fullData<-read.csv('Walmart-Yearly-Sales-by-Store.csv',header = TRUE,na='NA')
+summary(fullData)
+
+# Dropping NAs to account for last year sales.  Adequate data to not negatively impact the model.
+testData<-na.omit(fullData)
+
+testData$Type <- factor(testData$Type)
+testData$Store<-factor(testData$Store)
+testData$Date <- as.Date(testData$Date, "%m/%d/%Y")
+summary(testData)
+testData$Fuel_by_cents<-testData$Fuel_Price*100
+```
+
+Rqw Data scatter
+```{r}
+attach(testData)
+
+```
+
+
+##Scatter plots for each variable
+```{r}
+#Relationship between Size & Sales
+plot(Size,Sales,pch=16)
+abline(lm(Sales~Size),col='red',lty=2)
+
+#Relationship between Sales & Last Year Sales
+plot(LastYearSales,Sales,pch=16)
+abline(lm(Sales~LastYearSales),col='red',lty=2)
+
+#Relationship between Sales & Fuel Price
+plot(Fuel_Price,Sales,pch=16)
+abline(lm(Sales~Fuel_Price),col='red',lty=2)
+
+#Relationship between Sales & Temperature
+plot(Temperature,Sales,pch=16)
+abline(lm(Sales~Temperature),col='red',lty=2)
+
+#Relationship between Sales & CPI
+plot(CPI,Sales,pch=16)
+abline(lm(Sales~CPI),col='red',lty=2)
+
+#Relationship between Sales & Unemployment
+plot(Unemployment,Sales,pch=16)
+abline(lm(Sales~Unemployment),col='red',lty=2)
+```
+
+##Final model:
+
+```{r}
+finalfit<-lm(Sales ~ LastYearSales + Fuel_by_cents+ Temperature+ Unemployment + CPI  + IsHoliday)
+summary(finalfit)
+
+#Senstivity change
+finalfitWithLog<-lm(log(Sales) ~ log(LastYearSales) + log(Unemployment) + log(CPI)  + IsHoliday)
+summary(finalfitWithLog)
+```
+
+
+###Assumption Testing:
+**Collinearity Check:**
+```{r}
+cor(testData[,3:10])
+```
+
+###Residual testing:
+**Standardized residual plot ‐ on fitted values**
+```{r}
+finalfit.stres <- rstandard(finalfit)
+plot(finalfit$fitted.values, finalfit.stres, pch = 16, main = "Standardized Residual Plot", xlab = "Fitted Value", ylab = "Standardized Residuals")
+abline(0,0, lty=2, col="red")
+```
+  
+**Scatterplot Matrix**
+```{r}
+pairs(~ finalfit.stres+ Fuel_Price +IsHoliday+ Temperature+ Unemployment +  CPI +Size, main="Simple Scatterplot Matrix")
+
+```
+
+```{r}
+tem<-lm(Sales~Temperature)
+summary(tem)
+
+fuel<-lm(Sales~Fuel_Price)
+summary(fuel)
+
+cpi<-lm(Sales~CPI)
+summary(cpi)
+
+unemployment<-lm(Sales~Unemployment)
+summary(unemployment)
+
+size<-lm(Sales~Size)
+summary(size)
+
+lastyearsales<-lm(Sales~LastYearSales)
+summary(lastyearsales)
+```
+###Individual Scatter
+**Standardized residual plot ‐ on Size**
+```{r}
+plot(Size,finalfit.stres, pch=16, main="Standardized Residual Plot", xlab="Store Size",ylab="Standardized Residuals")
+abline(0,0,lty=2,col="blue")
+
+```
+
+**Standardized residual plot ‐ on Last Year Sales**
+```{r}
+plot(LastYearSales,finalfit.stres, pch=16, main="Standardized Residual Plot", xlab="Last Year Sales",ylab="Standardized Residuals")
+abline(0,0,lty=2,col="blue")
+```
+
+**Standardized residual plot ‐ on Fuel Price**
+```{r}
+plot(Fuel_Price,finalfit.stres, pch=16, main="Standardized Residual Plot", xlab="Fuel Price",ylab="Standardized Residuals")
+abline(0,0,lty=2,col="blue")
+```
+
+**Standardized residual plot ‐ Unemployment**
+```{r}
+plot(Unemployment,finalfit.stres, pch=16, main="Standardized Residual Plot", xlab="Unemployment",ylab="Standardized Residuals")
+abline(0,0,lty=2,col="blue")
+
+```
+
+**Standardized residual plot ‐ Temperature**
+```{r}
+plot(Temperature,finalfit.stres, pch=16, main="Standardized Residual Plot", xlab="Temperature",ylab="Standardized Residuals")
+abline(0,0,lty=2,col="blue")
+
+```
+
+**Standardized residual plot ‐ on CPI**
+```{r}
+plot(CPI,finalfit.stres, pch=16, main="Standardized Residual Plot", xlab="CPI",ylab="Standardized Residuals")
+abline(0,0,lty=2,col="blue")
+
+```
+
+###Residual plot Normality Checking
+**Histogram with normal curve**
+```{r}
+h<- hist(finalfit.stres)
+x<-finalfit.stres
+xfit<-seq(min(x),max(x),length=50)
+yfit<-dnorm(xfit,mean = mean(x),sd=sd(x))
+yfit<-yfit*diff(h$mids[1:2])*length(x)
+lines(xfit,yfit,col='blue')
+```
+
+**Normal probability Plot**
+```{r}
+qqnorm(finalfit.stres, main = "Normal Probability Plot", xlab = "Normal Scores", ylab = "Standardized Residuals")
+qqline(finalfit.stres, col = "red")
+```
+
+
+```{r}
+detach(testData)
+```
+

@@ -1,0 +1,203 @@
+
+---
+title: "Arima Forecasting"
+author: "KK"
+date: '`Febraury 15, 2017)`'
+---
+
+
+```{r}
+suppressPackageStartupMessages({
+  library(readr)
+  library(lubridate)
+  library(TSA)
+  library(ggplot2)
+  library(dplyr)
+  library(forecast)
+})
+```
+
+
+
+# Forecasting
+
+In this analysis, I have used a vehicles data set which includes - the number of vehicles that travelled on a particular very popular un-named bridge over several years.
+
+
+```{r}
+vehicles_train <- read_csv("vehicles_train.csv")
+
+```
+
+```{r}
+head(vehicles_train)
+
+```
+
+
+I am trying to forecast the number of vehicles that will travel over the brigde in the next months along with a 95% confidence interval.
+
+
+
+
+
+* Day column is imported as text and the system does not recognize it as a date. Also, the time series is not imported as a `ts` type (which is preferred by many functions)
+
+```{r}
+head(vehicles_train)
+```
+
+* I recommend using `readr` and `lubridate` packages in order to work with csv files and parse dates
+
+* You may want to convert it into `ts` in order to fully use all the available functions
+
+
+```{r}
+vehicles_train$Day <- dmy(vehicles_train$Day)
+vehicles_train$NumVehicles <- ts(vehicles_train$NumVehicles)
+
+
+vehicles_test <- read_csv("vehicles_test.csv") 
+vehicles_test$NumVehicles <- ts(vehicles_test$NumVehicles)
+vehicles_test$Day <- dmy(vehicles_test$Day)
+
+head(vehicles_test)
+
+```
+
+As you can see `vehicles_test` contains 4 columns:
+
+* `Day` --- the date of the desired forecast in the same format as above
+* `NumVehicles` --- your point-estimate forecast for the number of vehicles that will travel on that day
+* `Low` --- the lower bound of the 95% confidence interval for your forecast
+* `High` --- the upper bound of the 95% confidence interval for your forecast
+
+
+
+In order to generate accurate forecasts it is important to understand the process that generated the variable.
+
+
+
+```{r}
+
+ggplot(data = vehicles_train) + geom_line(aes(y = NumVehicles, x = Day)) +
+  labs(title = " Trend of Number of Vehicles")
+
+
+
+```
+
+
+First step in understanding is a unit root test which will determine whether the process is stationary or not
+
+Next, as we observed the plot of the number of vehicles, there is seasonal component in the process. SO now we use ACF and PACF plots to understand the order of seasonality 
+
+We can also determine the orders of AR and MA processes of the non-seasonal compenen from the ACF and PACF plots.
+
+
+```{r}
+#Augmented Dickey Fuller Test to determine stationarity
+adf.test(vehicles_train$NumVehicles, alternative = "stationary")
+
+# from the acf we undestand there is strong seasonality present at 7 lags
+ggAcf(vehicles_train$NumVehicles)
+ggPacf(vehicles_train$NumVehicles)
+
+```
+
+Once we determine, the order of the non- seasonal component fromt the ACF and PACF plots we use the same approach to determine the order of seasonal component.
+
+In order to identify the order of the seasonal component, we first take seasonal difference of 7  and then follow the same approach to determine stationarity and order
+
+
+```{r}
+vehicles_train$diff7 <- append(diff(vehicles_train$NumVehicles,7),rep(0,7))
+
+
+adf.test(vehicles_train$diff7, alternative = "stationary")
+
+
+ggAcf(vehicles_train$diff7)
+ggPacf(vehicles_train$diff7)
+
+
+
+```
+
+
+Before using the model to forecast, it is important that we validate the model
+
+In this case, we use a moving window cross validation approach. First we take the first four months to train the data and test it on next two months. In the next iteration, we increase the length of training data 8 months and test it on next two months. This process continues until we reach the end of the data.
+
+During this validation process, we capture the performance of our ARIMA model, naive forecasting, naive forecasting with drift and mean forecast. 
+
+Comparing the performance of the ARIMA model with these baseline models will help understand the performance
+
+```{r}
+
+t <- 120 # number of days in sliced data
+n <- nrow(vehicles_train)
+
+
+rmse_model <- matrix(NA,(n-t)/60)
+rmse_naive <- matrix(NA,(n-t)/60)
+rmse_naivedrift <- matrix(NA,(n-t)/60)
+rmse_mean <- matrix(NA,(n-t)/60)
+
+train_length <- vehicles_train$Day[1]+days(t)
+ 
+for(i in seq(0,(n-t-60),60))
+{
+  train_data <- vehicles_train$NumVehicles[vehicles_train$Day >= (vehicles_train$Day[1]+days(i)) & 
+      vehicles_train$Day < (train_length+days(i))]
+  
+  test_data <-vehicles_train$NumVehicles[vehicles_train$Day >= 
+  (train_length+days(i)) & vehicles_train$Day < (train_length+days(i+60))]
+  
+  model_fit <- Arima(train_data, order=c(2,0,3), seasonal = list(order = c(1,0,3), period=7),method="ML")
+  
+  #model_fit <- auto.arima(train_data)
+  
+  #print(model_fit$coef) 
+  
+  model_forecast <- forecast(model_fit, h=60)
+  rmse_model[(i/60)+1] <- sqrt(mean((model_forecast[['mean']]-test_data)^2))
+    
+  naive_forecast <-rwf(train_data,h=60)
+  rmse_naive[(i/60)+1] <- sqrt(mean((naive_forecast[['mean']]-test_data)^2))
+  
+  naivedrift_forecast <-rwf(train_data,drift=TRUE,h=60)
+  rmse_naivedrift[(i/60)+1] <- sqrt(mean((naivedrift_forecast[['mean']]-test_data)^2))
+  
+  mean_forecast <-meanf(train_data,h=60)
+  rmse_mean[(i/60)+1] <- sqrt(mean((mean_forecast[['mean']]-test_data)^2))
+
+}
+
+
+mean(rmse_model)
+mean(rmse_naive)
+mean(rmse_naivedrift)
+mean(rmse_mean)
+
+```
+
+As observed ARIMA model outperforms all other base models. Similary we can incorporate differernt ARIMA models and finalise on a model that has a good overall cross validation performance
+
+Using the ARIMA model we can forecast the number of vehicles for the next two months along with 95% confidence inervals
+
+```{r}
+
+
+final_model <- Arima(vehicles_train$NumVehicles, 
+                     order=c(2,0,3), 
+                     seasonal = list(order = c(1,0,3), period=7),method="ML")
+
+
+test_forecast <- forecast(final_model,h = 61)
+
+vehicles_test$NumVehicles <- test_forecast$mean
+vehicles_test$Low <- test_forecast$lower[,2]
+vehicles_test$High <- test_forecast$upper[,2]
+
+```

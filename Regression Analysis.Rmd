@@ -7,7 +7,7 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-# For this regression, I used the Walmart Kaggle data set to understand relation between sales of a walmart store and different location based factors like temperature, fuel price, CPI etc
+For this regression, I used the Walmart Kaggle data set to understand relation between sales of a walmart store and different location based factors like temperature, fuel price, CPI etc
 ##Data Reading and Cleaning
 ```{r}
 fullData<-read.csv('Walmart-Yearly-Sales-by-Store.csv',header = TRUE,na='NA')
@@ -30,7 +30,7 @@ attach(testData)
 ```
 
 
-##Scatter plots for each variable
+Scatter plots for each variable
 ```{r}
 #Relationship between Size & Sales
 plot(Size,Sales,pch=16)
@@ -57,7 +57,7 @@ plot(Unemployment,Sales,pch=16)
 abline(lm(Sales~Unemployment),col='red',lty=2)
 ```
 
-##Final model:
+Final model:
 
 ```{r}
 finalfit<-lm(Sales ~ LastYearSales + Fuel_by_cents+ Temperature+ Unemployment + CPI  + IsHoliday)
@@ -69,13 +69,13 @@ summary(finalfitWithLog)
 ```
 
 
-###Assumption Testing:
+Assumption Testing:
 **Collinearity Check:**
 ```{r}
 cor(testData[,3:10])
 ```
 
-###Residual testing:
+Residual testing:
 **Standardized residual plot ‐ on fitted values**
 ```{r}
 finalfit.stres <- rstandard(finalfit)
@@ -108,7 +108,10 @@ summary(size)
 lastyearsales<-lm(Sales~LastYearSales)
 summary(lastyearsales)
 ```
-###Individual Scatter
+
+
+Individual Scatter plots
+
 **Standardized residual plot ‐ on Size**
 ```{r}
 plot(Size,finalfit.stres, pch=16, main="Standardized Residual Plot", xlab="Store Size",ylab="Standardized Residuals")
@@ -166,8 +169,4 @@ qqnorm(finalfit.stres, main = "Normal Probability Plot", xlab = "Normal Scores",
 qqline(finalfit.stres, col = "red")
 ```
 
-
-```{r}
-detach(testData)
-```
 

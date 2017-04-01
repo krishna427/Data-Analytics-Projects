@@ -1,0 +1,232 @@
+---
+title: "Outlier detection and missing value imputation"
+author: "KK"
+date: "March 31, 2017"
+output: html_document
+---
+
+The dataset contains air pollution data from Chicago from a period Jan 1987 till end of 2005. To learn more about these measures visit http://www.airnow.gov/index.cfm?action=aqibasics.particle   
+
+In this analysis we will be using 'dplyr' package to perform outlier analysis and we will use the 'mice' package to impute the missing values.
+
+After imputing the missing values, using the 'dplyr' packe to perform exploratory analysis of the data
+
+```{r}
+
+#library(dplyr)
+#library(mice)
+#library(ggplot2)
+#library(zoo)
+
+```
+
+
+
+
+```{r, echo=FALSE}
+
+chicago <- readRDS("chicago.rds")
+
+```
+
+
+
+
+```{r}
+head(chicago)
+```
+
+Making sure the dataset is a dplyr object and performing basic data cleansing activities that deal with outliers, data entry errors and missing values.
+
+```{r}
+chicago_d <- tbl_df(chicago)
+summary(chicago_d)
+```
+
+
+## Outlier Analysis
+```{r}
+ggplot(chicago_d,aes(x=chicago_d$city,y=chicago_d$tmpd)) + geom_boxplot() +labs(title="Outlier Analysis of 'temperature- tmpd'", x="chicago", y="temperature")
+
+ggplot(chicago_d,aes(x=chicago_d$city,y=chicago_d$dptp)) + geom_boxplot() +labs(title="Outlier Analysis of 'duepoint temperature - dptp'", x="chicago", y="duepoint temperature")
+
+ggplot(chicago_d,aes(x=chicago_d$city,y=chicago_d$pm10tmean2)) + geom_boxplot() +labs(title="Outlier Analysis of 'pm10tmean2'", x="chicago", y="values of pm10tmean2")
+
+ggplot(chicago_d,aes(x=chicago_d$city,y=chicago_d$pm25tmean2)) + geom_boxplot()+ labs(title="Outlier Analysis of 'pm25tmean2'", x="chicago", y="values of pm25tmean2")
+
+ggplot(chicago_d,aes(x=chicago_d$city,y=chicago_d$o3tmean2)) + geom_boxplot() +labs(title="Outlier Analysis of 'o3tmean2'", x="chicago", y="values of o3tmean2")
+
+ggplot(chicago_d,aes(x=chicago_d$city,y=chicago_d$no2tmean2)) + geom_boxplot() +labs(title="Outlier Analysis of 'no2tmean2'", x="chicago", y="values of no2tmean2")
+
+```
+
+##Outlier Treatment
+##replacing the outliers(values which fall outside of 3*IQR) with NA
+##These NA's will be imputed using Predictive mean matching
+```{r}
+replace_outliers_NA <- function(x, na.rm = TRUE,...) {
+  qnt <- quantile(x, probs=c(.25, .75), na.rm = na.rm,... )
+  H <- 3 * IQR(x, na.rm = na.rm)
+  y <- x
+  y[x < (qnt[1] - H)] <- NA
+  y[x > (qnt[2] + H)] <- NA
+  y
+}
+
+
+chicago_d$tmpd <- replace_outliers_NA(chicago_d$tmpd)
+chicago_d$dptp <- replace_outliers_NA(chicago_d$dptp)
+chicago_d$pm25tmean2 <- replace_outliers_NA(chicago_d$pm25tmean2)
+chicago_d$pm10tmean2 <- replace_outliers_NA(chicago_d$pm10tmean2)
+chicago_d$o3tmean2 <- replace_outliers_NA(chicago_d$o3tmean2)
+chicago_d$no2tmean2 <- replace_outliers_NA(chicago_d$no2tmean2)
+
+summary(chicago_d)
+```
+
+## Columns 'tmpd' and 'dptp' have 1 and 2 missing values only.
+## Plotting the histograms to understand the distribution of the data
+```{r}
+g1 <- ggplot(chicago_d) + geom_histogram(aes(tmpd),binwidth = 1) 
+g1 <- g1 + labs(title="Frequency distribituion of 'tmpd'", x="tmpd", y="frequency")
+g1
+g2 <-ggplot(chicago_d) + geom_histogram(aes(dptp),binwidth = 1)
+g2 <- g2 + labs(title="Frequency distribituion of 'dptp'", x="dptp", y="frequency")
+g2
+
+```
+
+## Both the distributuions are centered around mean with no skewness
+## Using nearby values to replace these missing values
+
+```{r}
+chicago_d$tmpd <-  (na.locf(chicago_d$tmpd) + rev(na.locf(rev(chicago_d$tmpd))))/2
+chicago_d$dptp <- (na.locf(chicago_d$dptp) + rev(na.locf(rev(chicago_d$dptp))))/2
+
+```
+
+
+## Columns 'pm25tmean2' and 'pm10tmean2' have high number of missing values relative to other columns
+## Plotting histograms to understand the distribution of data for these two columns across all years
+```{r}
+g3 <- ggplot(chicago_d) + geom_histogram(aes(pm25tmean2)) 
+g3 <- g1 + labs(title="Frequency distribituion of 'pm25tmean2'", x="pm25tmean", y="Count of particles")
+g3
+g4 <-ggplot(chicago_d) + geom_histogram(aes(pm10tmean2))
+g4 <- g2 + labs(title="Frequency distribituion of 'pm10tmean2'", x="pm10tmean", y="Count of particles")
+g4
+```
+
+
+## Using 'mice' package to replace missing values in the columns 'pm10tmean' and 'pm10tmean'
+## mice uses linear regression technique to estimate the missing values using the rest of the variables as predictors 
+```{r}
+imputed_data <- mice(chicago_d[sapply(chicago_d,is.numeric)],m=2,maxit =10, method ='pmm')
+
+chicago_i<- complete(imputed_data,1)
+chicago_i$city <- chicago_d$city
+chicago_i$date <- chicago_d$date
+
+```
+
+Exploratory analysis:
+
+1. What are the days with 'seemingly' high value of PM2.5. 
+
+Cutoff for seemingly high values has been defined based on the maximum values oserved in the past ten years
+All the days with values greater than this cut off are seemigly high values
+```{r}
+chicago_i$year <- as.POSIXlt(chicago_i$date)$year + 1900
+
+pm25_stats_by_year <- chicago_i %>%
+  group_by(year) %>% 
+  summarise(max(pm25tmean2))
+
+previous_five <- pm25_stats_by_year %>%
+   filter(year >1995)
+
+cutoff_highpm25 <- mean(previous_five$`max(pm25tmean2)`)
+
+seemingly_highpm25 <- chicago_i %>%
+  filter(pm25tmean2 > cutoff_highpm25) %>%
+  filter(year > 1995)
+
+seemingly_highpm25 <- arrange(seemingly_highpm25,pm25tmean2)
+
+seemingly_highpm25[1:5,]
+```
+
+
+
+
+Exploreing this subset of high PM2.5 level days further and see if other factors in the data could be linked to these high PM2.5 days. 
+
+## The high PM2.5 level have a mild correlation with 'no2' and 'pm10'
+```{r}
+cor(seemingly_highpm25$pm25tmean2,seemingly_highpm25$pm10tmean2)
+cor(seemingly_highpm25$pm25tmean2,seemingly_highpm25$o3tmean2)
+cor(seemingly_highpm25$pm25tmean2,seemingly_highpm25$no2tmean2)
+cor(seemingly_highpm25$pm25tmean2,seemingly_highpm25$tmpd)
+cor(seemingly_highpm25$pm25tmean2,seemingly_highpm25$dptp)
+
+ggplot(seemingly_highpm25,aes(pm10tmean2, pm25tmean2)) + geom_line(size=1)
+ggplot(seemingly_highpm25,aes(o3tmean2, pm25tmean2)) + geom_line(size=1)
+ggplot(seemingly_highpm25,aes(no2tmean2, pm25tmean2)) + geom_line(size=1)
+ggplot(seemingly_highpm25,aes(tmpd, pm25tmean2)) + geom_line(size=1)
+ggplot(seemingly_highpm25,aes(dptp, pm25tmean2)) + geom_line(size=1)
+
+```
+
+
+
+Key summary statistics of the pollutants by year 
+```{r}
+
+chicago_i$year <- as.POSIXlt(chicago_i$date)$year + 1900
+
+
+pm25_stats_by_year <- chicago_i %>%
+  group_by(year) %>% 
+  summarise(mean(pm25tmean2),median(pm25tmean2),max(pm25tmean2),min(pm25tmean2))
+
+pm10_stats_by_year <- chicago_i %>%
+  group_by(year) %>% 
+  summarise(mean(pm10tmean2),median(pm10tmean2),max(pm10tmean2),min(pm10tmean2))
+
+pm10_stats_by_year <- chicago_i %>%
+  group_by(year) %>% 
+  summarise(mean(o3tmean2),median(o3tmean2),max(o3tmean2),min(o3tmean2))
+
+pm10_stats_by_year <- chicago_i %>%
+  group_by(year) %>% 
+  summarise(mean(no2tmean2),median(no2tmean2),max(no2tmean2),min(no2tmean2))
+
+
+```
+
+
+Quintile analysis
+
+Using the quintiles is a good way to understand how one variable across the quintiles of another variable
+
+What are the average levels of Ozone (o3) within quintiles of PM25? 
+
+
+```{r}
+ApplyQuintiles <- function(x) {
+  cut(x, breaks=c(quantile(chicago_i$pm25tmean2, probs = seq(0, 1, by = 0.20))),labels=c("Q1","Q2","Q3","Q4","Q5"), include.lowest=TRUE)
+}
+
+chicago_i$pm25.qunit <- sapply(chicago_i$pm25tmean2,ApplyQuintiles)
+
+o3_by_pm25quantile <- chicago_i %>%
+  group_by(pm25.qunit) %>%
+  summarise(mean(o3tmean2))
+
+o3_by_pm25quantile
+```
+
+
+Findings:
+
+## The Ozone level across the PM25 quantiles tends to decrease with increase in PM25 until quantile 3 but this behaviour is not observed in quantile 4 where a sudden in ozone level is observed. This behaviour can  probably be better explained using other additional factors.
